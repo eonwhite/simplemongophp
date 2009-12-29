@@ -1,50 +1,28 @@
 <?php
 
 /**
- * Class Dbo
+ * Class Db
  *
  * @package SimpleMongoPhp
  * @author Ian White (ibwhite@gmail.com)
- * @version 1.0
+ * @version 1.1
  *
- * This is a simple library to allow you to work with simple data objects.
+ * Copyright 2009 Ian White
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * To set up, all you need to do is:
- *    - include() or require() the Db.php file, and this file
- *    - define a global variable named $mongo that represents your Mongo connection object
- *    - define('MONGODB_NAME', <the name of your database>);
- *    - create any number of data object classes that extend Dbo
- *    - call Dbo::addClass(<class name>, <collection name>) for each class
- *
- * Example usage (this code does basically the same thing as the sample code in Db.php)
- *   $mongo = new Mongo();
- *   define('MONGODB_NAME', 'lost');
- *   class LostPerson extends Dbo {
- *     function rollCall() {
- *       echo "$this->name is a " . ($this->goodguy ? 'good' : 'bad') . " guy!\n";
- *     }
- *   }
- *   Dbo::addClass('LostPerson', 'people');
- *
- *   Db::drop('people');
- *   Db::batchInsert('people', array(
- *     array('name' => 'Jack', 'sex' => 'M', 'goodguy' => true),
- *     array('name' => 'Kate', 'sex' => 'F', 'goodguy' => true),
- *     array('name' => 'Locke', 'sex' => 'M', 'goodguy' => true),
- *     array('name' => 'Hurley', 'sex' => 'M', 'goodguy' => true),
- *     array('name' => 'Ben', 'sex' => 'M', 'goodguy' => false),
- *   ));
- *   foreach (Dbo::find('LostPerson', array('goodguy' => true), array('sort' => array('name' => 1))) as $p) {
- *     $p->rollCall();
- *   }
- *   $ben = Dbo::findOne('LostPerson', array('name' => 'Ben'));
- *   $locke = Dbo::findOne('LostPerson', array('name' => 'Locke'));
- *   $ben->enemy = Dbo::toRef($locke);
- *   $ben->goodguy = null;
- *   Dbo::save($ben);
- *
- * This library may be freely distributed and modified for any purpose.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *   
  **/
+
 class Dbo {
     public $_data = array();
     
@@ -71,6 +49,10 @@ class Dbo {
         if ($field == 'id') {
             return "$this->_id";
         }
+        $i = strpos($field, '.');
+        if ($i !== false) {
+            return $this->_getDotNotation($field, $this->_data);
+        }
         return isset($this->_data[$field]) ? $this->_data[$field] : null;
     }
 
@@ -82,7 +64,39 @@ class Dbo {
      * @return mixed
      **/
     function __set($field, $value) {
+        $i = strpos($field, '.');
+        if ($i !== false) {
+            $this->_setDotNotation($field, $value, $this->_data);
+        }
         return $this->_data[$field] = $value;
+    }
+    
+    private function _getDotNotation($fields, &$current) {
+        $i = strpos($fields, '.');
+        if ($i !== false) {
+            $field = substr($fields, 0, $i);
+            if (!isset($current[$field])) {
+                return null;
+            }
+            $current =& $current[$field];
+            return $this->_getDotNotation(substr($fields, $i+1), $current);
+        } else {
+            return isset($current[$fields]) ? $current[$fields] : null;
+        }
+    }
+    
+    private function _setDotNotation($fields, $value, &$current) {
+        $i = strpos($fields, '.');
+        if ($i !== false) {
+            $field = substr($fields, 0, $i);
+            if (!isset($current[$field])) {
+                $current[$field] = array();
+            }
+            $current =& $current[$field];
+            return $this->_setDotNotation(substr($fields, $i+1), $value, $current);
+        } else {
+            $current[$fields] = $value;
+        }
     }
     
     /**
@@ -113,6 +127,16 @@ class Dbo {
      *
      **/
     function presave() {
+    }
+    
+    /**
+     * This function will be called immediately prior to removing an object.
+     * 
+     * Override in subclasses to, for example, delete related records, or throw an Exception
+     * for objects that simply should not be removed.
+    **/
+    function preremove() {
+        
     }
 
     /**
@@ -213,6 +237,20 @@ class Dbo {
     }
     
     /**
+     * Count the number of objects matching a query in a collection (or all objects)
+     *
+     * @param string $collection
+     * @param array $query
+     * @return integer
+     **/
+    static function count($class, $query = array()) {
+        global $mongo;
+        $collection = self::getCollection($class);
+        $count = Db::count($collection, $query);
+        return $count ? $count : 0;
+    }
+    
+    /**
      * Saves a data object in the correct collection, calling presave() first
      *
      * @param Dbo $object
@@ -234,6 +272,7 @@ class Dbo {
     static function remove($object) {
         $class = get_class($object);
         $collection = self::getCollection($class);
+        $object->preremove();
         return Db::remove($collection, array('_id' => $object->_id));
     }
 
@@ -297,7 +336,7 @@ class Dbo {
 * Helper iterator class for Dbo::find(), implements the Iterator interface so you can
 * foreach your way through the returned result and not worry about the details.
 **/
-class Dboiterator implements Iterator {
+class Dboiterator implements Iterator, Countable {
     private $class;
     private $resultset;
     
@@ -327,5 +366,9 @@ class Dboiterator implements Iterator {
 
     function valid() {
         return $this->resultset->valid();
+    }
+    
+    function count() {
+        return $this->resultset->count();
     }
 }

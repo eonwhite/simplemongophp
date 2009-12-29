@@ -7,39 +7,22 @@
  * @author Ian White (ibwhite@gmail.com)
  * @version 1.0
  *
- * This is a simple library to wrap around the Mongo API and make it a little more convenient
- * to use for a PHP web application.
+ * Copyright 2009 Ian White
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
- * To set up, all you need to do is:
- *    - include() or require() this file
- *    - define a global variable named $mongo that represents your Mongo connection object
- *    - define('MONGODB_NAME', <the name of your database>);
- *
- * Example usage:
- *   $mongo = new Mongo();
- *   define('MONGODB_NAME', 'lost');
- *
- *   Db::drop('people');
- *   Db::batchInsert('people', array(
- *     array('name' => 'Jack', 'sex' => 'M', 'goodguy' => true),
- *     array('name' => 'Kate', 'sex' => 'F', 'goodguy' => true),
- *     array('name' => 'Locke', 'sex' => 'M', 'goodguy' => true),
- *     array('name' => 'Hurley', 'sex' => 'M', 'goodguy' => true),
- *     array('name' => 'Ben', 'sex' => 'M', 'goodguy' => false),
- *   ));
- *   foreach (Db::find('people', array('goodguy' => true), array('sort' => array('name' => 1))) as $p) {
- *     echo $p['name'] " is a good guy!\n";
- *   }
- *   $ben = Db::findOne('people', array('name' => 'Ben'));
- *   $locke = Db::findOne('people', array('name' => 'Locke'));
- *   $ben['enemy'] = Db::createRef('people', $locke);
- *   $ben['goodguy'] = null;
- *   Db::save('people', $ben);
- *
- * See the Dbo.php class for how you could do the same thing with data objects.
- *
- * This library may be freely distributed and modified for any purpose.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *   
  **/
+ 
 class Db {
     /**
      * Returns a MongoId from a string, MongoId, array, or Dbo object
