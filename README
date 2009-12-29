@@ -64,7 +64,7 @@ Example usage:
   foreach (Db::find('people',
                     array('goodguy' => true),
                     array('sort' => array('name' => 1))) as $p) {
-    echo $p['name'] " is a good guy!\n";
+    echo $p['name'] . " is a good guy!\n";
   }
   $ben = Db::findOne('people', array('name' => 'Ben'));
   $locke = Db::findOne('people', array('name' => 'Locke'));
@@ -119,6 +119,12 @@ Example usage (this code does basically the same thing as the code above)
   $ben->enemy = Dbo::toRef($locke);
   $ben->goodguy = null;
   Dbo::save($ben);
+  
+  $jack = Dbo::findOne('LostPerson', array('name' => 'Jack'));
+  $jack->{"skills.surgery"} = 8;
+  $jack->{"skills.leadership"} = 3;
+  echo "Jack is a " . $jack->{"skills.surgery"} . " at surgery...\n";
+  echo "... but a " . $jack->skills['leadership'] . " at leadership.\n";  
   
   
 Version Notes

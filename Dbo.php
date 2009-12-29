@@ -66,9 +66,10 @@ class Dbo {
     function __set($field, $value) {
         $i = strpos($field, '.');
         if ($i !== false) {
-            $this->_setDotNotation($field, $value, $this->_data);
+            return $this->_setDotNotation($field, $value, $this->_data);
+        } else {
+            return $this->_data[$field] = $value;
         }
-        return $this->_data[$field] = $value;
     }
     
     private function _getDotNotation($fields, &$current) {
@@ -95,7 +96,7 @@ class Dbo {
             $current =& $current[$field];
             return $this->_setDotNotation(substr($fields, $i+1), $value, $current);
         } else {
-            $current[$fields] = $value;
+            return $current[$fields] = $value;
         }
     }
     
