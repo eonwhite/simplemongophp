@@ -5,25 +5,108 @@
  *
  * @package SimpleMongoPhp
  * @author Ian White (ibwhite@gmail.com)
- * @version 1.0
+ * @version 1.2
  *
- * Copyright 2009 Ian White
- * 
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- * 
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * This is a simple library to wrap around the Mongo API and make it a little more convenient
+ * to use for a PHP web application.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *   
+ * To set up, all you need to do is:
+ *    - include() or require() this file
+ *    - call Db::addConnection()
+ *
+ * Example usage:
+ *   $mongo = new Mongo();
+ *   Db::addConnection($mongo, 'lost');
+ *
+ *   Db::drop('people');
+ *   Db::batchInsert('people', array(
+ *     array('name' => 'Jack', 'sex' => 'M', 'goodguy' => true),
+ *     array('name' => 'Kate', 'sex' => 'F', 'goodguy' => true),
+ *     array('name' => 'Locke', 'sex' => 'M', 'goodguy' => true),
+ *     array('name' => 'Hurley', 'sex' => 'M', 'goodguy' => true),
+ *     array('name' => 'Ben', 'sex' => 'M', 'goodguy' => false),
+ *   ));
+ *   foreach (Db::find('people', array('goodguy' => true), array('sort' => array('name' => 1))) as $p) {
+ *     echo $p['name'] " is a good guy!\n";
+ *   }
+ *   $ben = Db::findOne('people', array('name' => 'Ben'));
+ *   $locke = Db::findOne('people', array('name' => 'Locke'));
+ *   $ben['enemy'] = Db::createRef('people', $locke);
+ *   $ben['goodguy'] = null;
+ *   Db::save('people', $ben);
+ *
+ * See the Dbo.php class for how you could do the same thing with data objects.
+ *
+ * This library may be freely distributed and modified for any purpose.
  **/
- 
 class Db {
+    static $connections;
+    static $read_slave = false;
+
+    static function getConnectionInfo($collection = null, $read_only = false) {
+        $info = null;
+
+        // in read-only mode, check for a slave config if set to read slave
+        if ($read_only && self::$read_slave) {
+            if (isset(self::$connections["$collection/slave"])) {
+                $info = self::$connections["$collection/slave"];
+            } else if (isset(self::$connections['/slave'])) {
+                $info = self::$connections['/slave'];
+            }
+        }
+
+        if (!$info) {
+            if (isset(self::$connections[$collection])) {
+                $info = self::$connections[$collection];
+            } else if (isset(self::$connections[''])) {
+                $info = self::$connections[''];
+            } else if (isset($GLOBALS['mongo'])) {
+                $info = array($GLOBALS['mongo'], MONGODB_NAME); // backwards compat
+            } else {
+                throw new Exception('No connection configuration, call Db::addConnection()');
+            }
+        }
+
+        return $info;
+    }
+
+    static function getDb($collection, $read_only = false) {
+        $info = self::getConnectionInfo($collection, $read_only);
+        list($mongo, $db_name) = $info;
+        if (!$mongo->connected) {
+            $mongo->connect();
+        }
+        return $mongo->selectDB($db_name);
+    }
+
+    static function getCollection($collection, $read_only = false) {
+        $info = self::getConnectionInfo($collection, $read_only);
+        list($mongo, $db_name) = $info;
+        if (!$mongo->connected) {
+            $mongo->connect();
+        }
+        return $mongo->selectCollection($db_name, $collection);
+    }
+
+    static function addConnection($mongo, $db_name, $collections = null, $slave = false) {
+        $append = $slave ? '/slave' : '';
+        if (!$collections) {
+            self::$connections[$append] = array($mongo, $db_name);
+        } else {
+            foreach ($collections as $c) {
+                self::$connections["$c$append"] = array($mongo, $db_name);
+            }
+        }
+    }
+
+    static function addSlaveConnection($mongo, $db_name, $collections = null) {
+        self::addConnection($mongo, $db_name, $collections, true);
+    }
+    
+    static function readSlave($setting = true) {
+        self::$read_slave = $setting;
+    }
+    
     /**
      * Returns a MongoId from a string, MongoId, array, or Dbo object
      *
@@ -74,8 +157,7 @@ class Db {
      * @return array
      **/
     static function getRef($dbref) {
-        global $mongo;
-        $db = $mongo->selectDB(MONGODB_NAME);
+        $db = self::getDb($dbref['$ref'], true);
         return $db->getDBRef($dbref);
     }
 
@@ -117,17 +199,16 @@ class Db {
      * @return MongoCursor
      **/
     static function find($collection, $query = array(), $options = array()) {
-        global $mongo;
-        $col = $mongo->selectCollection(MONGODB_NAME, $collection);
+        $col = self::getCollection($collection, true);
         $fields = isset($options['fields']) ? $options['fields'] : array();
         $result = $col->find($query, $fields);
-        if (isset($options['sort'])) {
+        if (isset($options['sort']) && $options['sort'] !== null) {
             $result->sort($options['sort']);
         }
-        if (isset($options['limit'])) {
+        if (isset($options['limit']) && $options['limit'] !== null) {
             $result->limit($options['limit']);
         }
-        if (isset($options['skip'])) {
+        if (isset($options['skip']) && $options['skip'] !== null) {
             $result->skip($options['skip']);
         }
         return $result;
@@ -197,8 +278,7 @@ class Db {
      * @return array
      **/
     static function findOne($collection, $id) {
-        global $mongo;
-        $col = $mongo->selectCollection(MONGODB_NAME, $collection);
+        $col = self::getCollection($collection, true);
         if (!is_array($id)) {
             $id = array('_id' => self::id($id));
         }
@@ -213,8 +293,7 @@ class Db {
      * @return integer
      **/
     static function count($collection, $query = array()) {
-        global $mongo;
-        $col = $mongo->selectCollection(MONGODB_NAME, $collection);
+        $col = self::getCollection($collection, true);
         if ($query) {
             $res = $col->find($query);
             return $res->count();
@@ -231,10 +310,19 @@ class Db {
      * @return boolean
      **/
     static function save($collection, $data) {
-        global $mongo;
-        $col = $mongo->selectCollection(MONGODB_NAME, $collection);
+        $col = self::getCollection($collection);
         return $col->save($data);
     }
+    
+    static function insert($collection, $data) {
+        $col = self::getCollection($collection);
+        return $col->insert($data);
+    }
+
+    static function lastError($collection = null, $read_only = false) {
+        $db = self::getDb($collection, $read_only);
+        return $db->lastError();
+    }    
 
     /**
      * Shortcut for MongoCollection's update() method
@@ -245,10 +333,37 @@ class Db {
      * @param boolean $upsert
      * @return boolean
      **/
-    static function update($collection, $criteria, $newobj, $upsert = false) {
-        global $mongo;
-        $col = $mongo->selectCollection(MONGODB_NAME, $collection);
-        return $col->update($criteria, $newobj, $upsert);
+    static function update($collection, $criteria, $newobj, $options = array()) {
+        $col = self::getCollection($collection);
+        if ($options === true) {
+            $options = array('upsert' => true);
+        }
+        if (!isset($options['multiple'])) {
+            $options['multiple'] = false;
+        }
+        return $col->update($criteria, $newobj, $options);
+    }
+    
+    static function updateConcurrent($collection, $criteria, $newobj, $options = array()) {
+        $col = self::getCollection($collection);
+        if (!isset($options['multiple'])) {
+            $options['multiple'] = false;
+        }
+        $i = 0;
+        foreach ($col->find($criteria, array('fields' => array('_id' => 1))) as $obj) {
+            $col->update(array('_id' => $obj['_id']), $newobj);
+            if (empty($options['multiple'])) {
+                return;
+            }
+            if (!empty($options['count_mod']) && $i % $options['count_mod'] == 0) {
+                if (!empty($options['count_callback'])) {
+                    call_user_func($options['count_callback'], $i);
+                } else {
+                    echo '.';
+                }
+            }
+            $i++;
+        }
     }
 
     /**
@@ -272,8 +387,7 @@ class Db {
      * @return boolean
      **/
     static function remove($collection, $criteria, $just_one = false) {
-        global $mongo;
-        $col = $mongo->selectCollection(MONGODB_NAME, $collection);
+        $col = self::getCollection($collection);
         if (!is_array($criteria)) {
             $criteria = array('_id' => self::id($criteria));
         }
@@ -287,8 +401,7 @@ class Db {
      * @return boolean
      **/
     static function drop($collection) {
-        global $mongo;
-        $col = $mongo->selectCollection(MONGODB_NAME, $collection);
+        $col = self::getCollection($collection);
         return $col->drop();
     }
 
@@ -300,9 +413,13 @@ class Db {
      * @return boolean
      **/
     static function batchInsert($collection, $array) {
-        global $mongo;
-        $col = $mongo->selectCollection(MONGODB_NAME, $collection);
+        $col = self::getCollection($collection);
         return $col->batchInsert($array);
+    }
+
+    static function group($collection, array $keys, array $initial, $reduce, array $condition = array()) {
+        $col = self::getCollection($collection, true);
+        return $col->group($keys, $initial, $reduce, $condition);
     }
 
     /**
@@ -312,32 +429,21 @@ class Db {
      * @param array $keys
      * @return boolean
      **/
-    static function ensureIndex($collection, $keys) {
-        global $mongo;
-        $col = $mongo->selectCollection(MONGODB_NAME, $collection);
-        return $col->ensureIndex($keys);
+    static function ensureIndex($collection, $keys, $options = array()) {
+        $col = self::getCollection($collection);
+        return $col->ensureIndex($keys, $options);
     }
 
     /**
-     * Ensure a unique index (there is no direct way to do this in the MongoCollection API now)
+     * Ensure a unique index
      *
      * @param string $collection
      * @param array $keys
      * @return boolean
      **/
-    static function ensureUniqueIndex($collection, $keys) {
-        global $mongo;
-        $name_parts = array();
-        foreach ($keys as $k => $v) {
-            $name_parts[] = $k;
-            $name_parts[] = $v;
-        }
-        $name = implode('_', $name_parts);
-        $col = $mongo->selectCollection(MONGODB_NAME, 'system.indexes');
-        $col->save(array('ns' => MONGODB_NAME . ".$collection",
-                         'key' => $keys,
-                         'name' => $name,
-                         'unique' => true));
+    static function ensureUniqueIndex($collection, $keys, $options = array()) {
+        $options['unique'] = true;
+        return self::ensureIndex($collection, $keys, $options);
     }
 
     /**
@@ -347,8 +453,7 @@ class Db {
      * @return array
      **/
     static function getIndexInfo($collection) {
-        global $mongo;
-        $col = $mongo->selectCollection(MONGODB_NAME, $collection);
+        $col = self::getCollection($collection, true);
         return $col->getIndexInfo();
     }
 
@@ -359,8 +464,7 @@ class Db {
      * @return boolean
      **/
     static function deleteIndexes($collection) {
-        global $mongo;
-        $col = $mongo->selectCollection(MONGODB_NAME, $collection);
+        $col = self::getCollection($collection);
         return $col->deleteIndexes();
     }
 }

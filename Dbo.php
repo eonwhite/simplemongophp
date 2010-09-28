@@ -1,28 +1,49 @@
 <?php
 
 /**
- * Class Db
+ * Class Dbo
  *
  * @package SimpleMongoPhp
  * @author Ian White (ibwhite@gmail.com)
- * @version 1.1
+ * @version 1.2
  *
- * Copyright 2009 Ian White
- * 
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- * 
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * This is a simple library to allow you to work with simple data objects.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *   
+ * To set up, all you need to do is:
+ *    - include() or require() the Db.php file, and this file
+ *    - call Db::addConnection()
+ *    - create any number of data object classes that extend Dbo
+ *    - call Dbo::addClass(<class name>, <collection name>) for each class
+ *
+ * Example usage (this code does basically the same thing as the sample code in Db.php)
+ *   $mongo = new Mongo();
+ *   define('MONGODB_NAME', 'lost');
+ *   class LostPerson extends Dbo {
+ *     function rollCall() {
+ *       echo "$this->name is a " . ($this->goodguy ? 'good' : 'bad') . " guy!\n";
+ *     }
+ *   }
+ *   Dbo::addClass('LostPerson', 'people');
+ *
+ *   Db::drop('people');
+ *   Db::batchInsert('people', array(
+ *     array('name' => 'Jack', 'sex' => 'M', 'goodguy' => true),
+ *     array('name' => 'Kate', 'sex' => 'F', 'goodguy' => true),
+ *     array('name' => 'Locke', 'sex' => 'M', 'goodguy' => true),
+ *     array('name' => 'Hurley', 'sex' => 'M', 'goodguy' => true),
+ *     array('name' => 'Ben', 'sex' => 'M', 'goodguy' => false),
+ *   ));
+ *   foreach (Dbo::find('LostPerson', array('goodguy' => true), array('sort' => array('name' => 1))) as $p) {
+ *     $p->rollCall();
+ *   }
+ *   $ben = Dbo::findOne('LostPerson', array('name' => 'Ben'));
+ *   $locke = Dbo::findOne('LostPerson', array('name' => 'Locke'));
+ *   $ben->enemy = Dbo::toRef($locke);
+ *   $ben->goodguy = null;
+ *   Dbo::save($ben);
+ *
+ * This library may be freely distributed and modified for any purpose.
  **/
-
 class Dbo {
     public $_data = array();
     
@@ -66,11 +87,70 @@ class Dbo {
     function __set($field, $value) {
         $i = strpos($field, '.');
         if ($i !== false) {
-            return $this->_setDotNotation($field, $value, $this->_data);
+            $this->_setDotNotation($field, $value, $this->_data);
         } else {
             return $this->_data[$field] = $value;
         }
     }
+    
+    /**
+     * isset() overload, checks if a field value is set
+     *
+     * @param string $field
+     * @return boolean
+     **/
+    function __isset($field) {
+        return isset($this->_data[$field]);
+    }
+    
+    /**
+     * unset() overload, unsets a field vlaue
+     *
+     * @param string $field
+     * @return boolean
+     **/
+    function __unset($field) {
+        unset($this->_data[$field]);
+    }
+    
+    /**
+     * Returns all attributes as array
+     *
+     * @return array
+     */
+    function getAttributes() {
+        return $this->_data;
+    }
+
+    /**
+     * This function will be called immediately prior to saving an object.
+     *
+     * Override in subclasses to, for example, set a created_time timestamp, or update dependent
+     * fields, or validate the data, or whatever you like.
+     *
+     */
+    function presave() {
+    }
+    
+    function preremove() {        
+    }
+    
+    /**
+     * Reload this object's data from db
+     * 
+     * @return void
+     */
+    public function reload()
+    {
+        if (isset($this->_id)) {
+            $class = get_class($this);
+            $collection = self::getCollection($class);
+            $this->_data = Db::findOne($collection, $this->_id);
+        }
+    }
+    
+    
+// Guts
     
     private function _getDotNotation($fields, &$current) {
         $i = strpos($fields, '.');
@@ -96,50 +176,13 @@ class Dbo {
             $current =& $current[$field];
             return $this->_setDotNotation(substr($fields, $i+1), $value, $current);
         } else {
-            return $current[$fields] = $value;
+            $current[$fields] = $value;
         }
     }
-    
-    /**
-     * isset() overload, checks if a field value is set
-     *
-     * @param string $field
-     * @return boolean
-     **/
-    function __isset($field) {
-        return isset($this->_data[$field]);
-    }
-    
-    /**
-     * unset() overload, unsets a field vlaue
-     *
-     * @param string $field
-     * @return boolean
-     **/
-    function __unset($field) {
-        unset($this->_data[$field]);
-    }
 
-    /**
-     * This function will be called immediately prior to saving an object.
-     *
-     * Override in subclasses to, for example, set a created_time timestamp, or update dependent
-     * fields, or validate the data, or whatever you like.
-     *
-     **/
-    function presave() {
-    }
     
-    /**
-     * This function will be called immediately prior to removing an object.
-     * 
-     * Override in subclasses to, for example, delete related records, or throw an Exception
-     * for objects that simply should not be removed.
-    **/
-    function preremove() {
-        
-    }
-
+// Static functions
+    
     /**
      * Register that a class belongs with a collection.
      *
@@ -288,29 +331,73 @@ class Dbo {
         $data = Db::getRef($dbref);
         return $data ? new $class($data) : null;
     }
+    
+    /**
+     * Looks up references to the same collection in one query and returns data objects
+     * of the correct class
+     *
+     * @param  string $collection
+     * @param  array  $ids
+     * @return array
+     */
+    static function getRefs($collection, array $ids) {
+        $class = self::getClass($collection);
+        $data = Db::find($collection, array(
+            '_id' => array('$in' => $ids)
+        ));
+        $objects = array();
+        foreach ($data as $id => $record) {
+            $objects[ array_search($id, $ids) ] = new $class($record);
+        }
+        ksort($objects);
+        return $objects;
+    }
 
     /**
      * Recursively looks up the database references in e.g. an array of database references,
      * returning all references as data objects
      *
      * @param mixed $value
+     * @param boolean $keep_nulls
      * @return mixed
      **/
-    static function expandRefs($value) {
-        if (is_array($value)) {
-            if (Db::isRef($value)) {
-                return self::getRef($value);
-            } else {
-                foreach ($value as $k => $v) {
-                    $value[$k] = self::expandRefs($v);
+    static function expandRefs($value, $keep_nulls = false) {
+        if (Db::isRef($value)) {
+            return self::getRef($value);
+        }
+        elseif (is_array($value)) {
+            // TODO: Temporay fix, remove this later
+            if (empty($value) || ($value[0] instanceof Dbo)) 
+                return $value;
+
+            // Check if all referenced objects are of the same type
+            $reference_map = array();
+            foreach ($value as $reference) {
+                $ref_collection = $reference['$ref'];
+                isset($reference_map[$ref_collection]) ||
+                    $reference_map[$ref_collection] = array();
+                $ref_id = $reference['$id'];
+                $reference_map[$ref_collection][] = $ref_id;
+            }
+            $referenced_collections = array_keys($reference_map);
+            if (count($referenced_collections) == 1) {
+                $referenced_collection = $referenced_collections[0];
+                $referenced_ids = $reference_map[$referenced_collection];
+                $entries = self::getRefs($referenced_collection, $referenced_ids);
+            }
+            else {
+                $entries = array();
+                foreach ($reference_map as $collection => $ids) {
+                    $entries = array_merge($entries, self::getRefs($collection, $ids));
                 }
             }
-        } else if ($value instanceof Dbo) {
-            foreach ($value->_data as $k => $v) {
-                $value->_data[$k] = self::expandRefs($v);
-            }
+            return $keep_nulls ? $entries : array_filter($entries);
         }
-        return $value;
+        // Empty array or null
+        elseif (!$value) {
+            return $value;
+        }
+        throw new Exception("Don't know how to expand: " . gettype($value));
     }
 
     /**
@@ -330,8 +417,8 @@ class Dbo {
             }
         }
         return $value;
-    }
-  }
+    }  
+}
 
 /**
 * Helper iterator class for Dbo::find(), implements the Iterator interface so you can
@@ -371,5 +458,18 @@ class Dboiterator implements Iterator, Countable {
     
     function count() {
         return $this->resultset->count();
+    }
+    
+    function skip($num) {
+        return $this->resultset->skip($num);
+    }
+    
+    function toArray() {
+        $models = array();
+        foreach ($this as $id => $model) {
+            $models[$id] = $model;
+        }
+        reset($this);
+        return $models;
     }
 }

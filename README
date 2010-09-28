@@ -46,8 +46,7 @@ chaining, because this is easier to cache.
 
 To set up, all you need to do is:
   - include() Db.php
-  - define a global variable named $mongo that represents your Mongo connection
-  - define('MONGODB_NAME', <name of your database>);
+  - call Db::addConnection(<new Mongo object>, <name of your database>)
   
 Example usage:
   $mongo = new Mongo();
@@ -85,15 +84,13 @@ instead of associative arrays.
 
 To set up, all you need to do is:
   - include() or require() both Db.php and Dbo.php
-  - define a global variable named $mongo that represents your Mongo connection object
-  - define('MONGODB_NAME', <the name of your database>);
+  - call Db::addConnection(<new Mongo object>, <name of your database>)
   - create any number of data object classes that extend Dbo
   - call Dbo::addClass(<class name>, <collection name>) for each class
 
 
 Example usage (this code does basically the same thing as the code above)
-  $mongo = new Mongo();
-  define('MONGODB_NAME', 'lost');
+  Db::addConnection(new Mongo(), 'lost');
   class LostPerson extends Dbo {
     function rollCall() {
       echo "$this->name is a " . ($this->goodguy ? 'good' : 'bad') . " guy!\n";
@@ -146,6 +143,16 @@ You could retrieve how good Jack is at surgery one of two ways:
   
  - Added preremove() hook to go with presave()
  - Made Dboiterator Countable
+ 
+1.2 - 9/29/2010
+ - No dependency on the MONGODB_NAME or $mongo globals
+ - Support for by-collection sharding -- set different collections
+ to talk to different Mongo instances using Db::addConnection() --
+ useful for poor-man's sharding such as having a different box for
+ your analytics collection
+ - Support for readSlave() -- tell a script to perform all reads
+ on a slave and writes on a master (will add replica set SLAVE_OK
+ support when that gets added to Mongo)
 
 
 License Information
