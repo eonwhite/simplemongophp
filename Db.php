@@ -294,6 +294,9 @@ class Db
         $this->readOnly = true;
         $col            = $this->getCollection($collection);
         $fields         = isset($options['fields']) ? $options['fields'] : array();
+        if(!is_array($fields)){
+            throw new \InvalidArgumentException('Option `fields` must be an array e.g. `["id"=>true,"title"=>false]`');
+        }
         $result         = $col->find($query, $fields);
         if (isset($options['sort']) && $options['sort'] !== null) {
             $result->sort($options['sort']);
