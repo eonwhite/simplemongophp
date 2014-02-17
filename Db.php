@@ -32,7 +32,7 @@ class Db
      */
     public function __construct($mongo = null, $dbName, $collections = null, $slave = false)
     {
-        if (!$mongo instanceof \Mongo && is_string($mongo)) {
+        if (!$mongo instanceof \MongoClient && is_string($mongo)) {
             $this->mongo         = $mongo;
             $this->currentDbName = $dbName;
             $this->initializeConnection();
