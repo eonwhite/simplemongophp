@@ -56,7 +56,7 @@ class Db
      */
     private function isConnected()
     {
-        return $this->mongo !== null && $this->mongo instanceof \Mongo && $this->mongo->connected;
+        return $this->mongo !== null && $this->mongo instanceof \MongoClient;
     }
 
     /**
