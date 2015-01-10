@@ -380,15 +380,15 @@ class Db
      * Find a single object -- like Mongo's findOne() but you can pass an id as a shortcut
      *
      * @param string $collection
-     * @param mixed  $id
+     * @param null   $id
      *
-     * @return array
-     **/
-    public function findOne($collection, $id = 0)
+     * @return array|null
+     */
+    public function findOne($collection, $id = null)
     {
         $this->readOnly = true;
         $col            = $this->getCollection($collection);
-        if ($id === 0) {
+        if ($id === null) {
             return $col->findOne();
         }
         if (!is_array($id)) {
