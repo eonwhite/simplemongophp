@@ -169,6 +169,10 @@ echo "... but a " . $jack->skills['leadership'] . " at leadership.\n";
  * Support for readSlave() -- tell a script to perform all reads
    on a slave and writes on a master (will add replica set SLAVE_OK
    support when that gets added to Mongo)
+   
+### 2.0 - 11/9/2016 ###
+ * Refactored to support `MongoClient` instead of deprecated `Mongo`,
+   moved away from static methods
 
 
 ## License Information ##
