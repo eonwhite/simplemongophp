@@ -1,5 +1,21 @@
 # SimpleMongoPhp #
-## by Ian White (ibwhite@gmail.com) ##
+## by [Ian White](https://github.com/ibwhite) ##
+## contributions by [Ahmed Mohamed](https://github.com/ahmedmhmd) ##
+
+## Update (2016)
+
+This library is extremely old. It was written way back in 2009, when MongoDB
+was very new and PHP support was much more limited than it is today. I cannot
+recommend using this anymore and have not been maintaining the code in some
+years.
+
+That said over the years a few people seem to have found some benefit from it,
+so I'm leaving it up and I'm happy to continue to accept PRs if anybody is
+using it.
+
+-- Ian
+
+## Description
 
 This is a very simple library to wrap around the Mongo API and make it a
 little more convenient to use for a PHP web application.
